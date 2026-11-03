@@ -1,8 +1,5 @@
-
-import json
-from pathlib import Path
-
 import streamlit as st
+from supabase import create_client, Client
 
 st.set_page_config(
     page_title="천원의 아침밥",
@@ -10,32 +7,34 @@ st.set_page_config(
     layout="centered"
 )
 
-DATA_FILE = Path(__file__).with_name("breakfast.json")
+# Supabase 연결
+@st.cache_resource
+def get_supabase() -> Client:
+    return create_client(
+        st.secrets["SUPABASE_URL"],
+        st.secrets["SUPABASE_KEY"]
+    )
 
 
 def load_data():
-    if not DATA_FILE.exists():
-        return {
-            "quantity": 100,
-            "updated_at": "아직 업데이트되지 않음"
-        }
+    supabase = get_supabase()
 
-    try:
-        with DATA_FILE.open("r", encoding="utf-8") as f:
-            data = json.load(f)
+    response = (
+        supabase.table("breakfast")
+        .select("quantity, updated_at")
+        .eq("id", 1)
+        .single()
+        .execute()
+    )
 
-        return {
-            "quantity": max(0, int(data.get("quantity", 0))),
-            "updated_at": str(
-                data.get("updated_at", "기록 없음")
-            )
-        }
+    data = response.data
 
-    except (json.JSONDecodeError, OSError, TypeError, ValueError):
-        return {
-            "quantity": 0,
-            "updated_at": "데이터를 읽을 수 없음"
-        }
+    return {
+        "quantity": max(0, int(data["quantity"])),
+        "updated_at": str(
+            data.get("updated_at", "기록 없음")
+        )
+    }
 
 
 # 화면 디자인
@@ -166,12 +165,21 @@ st.markdown("""
 # 잔여 수량 표시
 @st.fragment(run_every="2s")
 def student_page():
-    data = load_data()
-    quantity = data["quantity"]
+
+    try:
+        data = load_data()
+        quantity = data["quantity"]
+
+    except Exception:
+        st.error(
+            "잔여 수량을 불러오지 못했습니다. "
+            "잠시 후 다시 확인해 주세요."
+        )
+        return
 
     # 수량에 따라 숫자 색상과 안내 문구 설정
     if quantity <= 5:
-        number_color = "#DC2626"  # 빨간색
+        number_color = "#DC2626"
         status_class = "status-none"
 
         if quantity == 0:
@@ -180,12 +188,12 @@ def student_page():
             status_text = "잔여 수량이 얼마 남지 않았어요!"
 
     elif quantity <= 10:
-        number_color = "#EA8500"  # 주황색
+        number_color = "#EA8500"
         status_class = "status-low"
         status_text = "잔여 수량이 얼마 남지 않았어요!"
 
     else:
-        number_color = "#245C43"  # 초록색
+        number_color = "#245C43"
         status_class = "status-good"
         status_text = "아직 이용할 수 있어요!"
 
@@ -221,3 +229,5 @@ st.markdown("""
     CAMPUS BREAKFAST · 학생용 잔여 수량 안내
 </div>
 """, unsafe_allow_html=True)
+
+        
